@@ -229,7 +229,7 @@ pragma solidity 0.6.12;
 // solhint-disable no-inline-assembly
 // solhint-disable not-rely-on-time
 
-// Data part taken out for building of contracts that receive delegate calls
+/// @dev Data part taken out for building of contracts that receive delegate calls
 contract ERC20Data {
     /// @notice owner > balance mapping.
     mapping(address => uint256) public balanceOf;
@@ -622,10 +622,6 @@ interface IStrategy {
 pragma solidity 0.6.12;
 pragma experimental ABIEncoderV2;
 
-
-
-
-
 interface IBentoBoxV1 {
     event LogDeploy(address indexed masterContract, bytes data, address indexed cloneAddress);
     event LogDeposit(address indexed token, address indexed from, address indexed to, uint256 amount, uint256 share);
@@ -815,13 +811,14 @@ pragma solidity 0.6.12;
 
 /// @title Chamber
 /// @dev This contract allows contract calls to any contract (except BentoBox)
-/// from arbitrary callers thus, don't trust calls from this contract in any circumstances.
+/// Inherits from BoringOwnable for ownership management and IMasterContract for BentoBox integration.
 contract ChamberFlat is BoringOwnable, IMasterContract {
-    using BoringMath for uint256;
-    using BoringMath128 for uint128;
-    using RebaseLibrary for Rebase;
-    using BoringERC20 for IERC20;
+    using BoringMath for uint256;     // Safe math operations for uint256.
+    using BoringMath128 for uint128;  // Safe math operations for uint128.
+    using RebaseLibrary for Rebase;   // Library for Rebase related calculations.
+    using BoringERC20 for IERC20;     // Library for ERC20 interactions.
 
+    /// @dev Events to emit on actions taken in the contract.
     event LogExchangeRate(uint256 rate);
     event LogAccrue(uint128 accruedAmount);
     event LogAddCollateral(address indexed from, address indexed to, uint256 share);
@@ -831,53 +828,78 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
     event LogFeeTo(address indexed newFeeTo);
     event LogWithdrawFees(address indexed feeTo, uint256 feesEarnedFraction);
 
-    // Immutables (for MasterContract and all clones)
+    /// @dev Reference to the BentoBoxV1 contract for managing BentoBox related activities.
     IBentoBoxV1 public immutable bentoBox;
+
+    /// @dev Reference to the master contract when creating a cloned contract.
     ChamberFlat public immutable masterContract;
+
+    /// @dev Reference to the senUSD token, assumed to be the stablecoin in use.
     IERC20 public immutable senUSD;
 
-    // MasterContract variables
+    /// @dev Reference to the master contract when creating a cloned contract.
     address public feeTo;
 
-    // Per clone variables
-    // Clone init settings
+    /// @dev Stores the ERC20 token used as collateral in this Chamber.
     IERC20 public collateral;
+
+    /// @dev Reference to the oracle contract which provides asset pricing.
     IOracle public oracle;
+
+    /// @dev Data used by the oracle to provide price feeds.
     bytes public oracleData;
 
-    // Total amounts
+    /// @dev Total amount of collateral in shares held in the contract.
     uint256 public totalCollateralShare; // Total collateral supplied
+
+    /// @dev Tracks the total borrowed amounts in the system.
     Rebase public totalBorrow; // elastic = Total token amount to be repayed by borrowers, base = Total parts of the debt held by borrowers
 
-    // User balances
+    /// @dev Mapping of user addresses to their collateral share.
     mapping(address => uint256) public userCollateralShare;
+
+    /// @dev Mapping of user addresses to their portion of the debt.
     mapping(address => uint256) public userBorrowPart;
 
     /// @notice Exchange and interest rate tracking.
     /// This is 'cached' here because calls to Oracles can be very expensive.
     uint256 public exchangeRate;
 
+    /// @dev Information required for accruing interest on borrowed funds.
     struct AccrueInfo {
         uint64 lastAccrued;
         uint128 feesEarned;
         uint64 INTEREST_PER_SECOND;
     }
 
+    /// @dev Contains the accrue information such as when last accrual happened and fees earned since then.
     AccrueInfo public accrueInfo;
 
-    // Settings
+    /// @dev Settings for the Chamber regarding collateralization requirements.
     uint256 public COLLATERIZATION_RATE;
+
+    /// @dev Precision constant for the collateralization rate calculation.
     uint256 private constant COLLATERIZATION_RATE_PRECISION = 1e5; // Must be less than EXCHANGE_RATE_PRECISION (due to optimization in math)
 
+    /// @dev Precision for exchange rate to ensure accuracy during conversions.
     uint256 private constant EXCHANGE_RATE_PRECISION = 1e18;
 
+    /// @dev The liquidation multiplier setting for the Chamber.
     uint256 public LIQUIDATION_MULTIPLIER; 
+
+    /// @dev Precision constant for liquidation multiplier calculation.
     uint256 private constant LIQUIDATION_MULTIPLIER_PRECISION = 1e5;
 
+    /// @notice The fee taken when opening a borrow position.
     uint256 public BORROW_OPENING_FEE;
+
+    /// @dev Precision constant for borrow opening fee calculation.
     uint256 private constant BORROW_OPENING_FEE_PRECISION = 1e5;
 
+    /// @dev Part of the distribution during certain operations.
     uint256 private constant DISTRIBUTION_PART = 10;
+
+    /// @dev Precision constant for distribution calculations.
     uint256 private constant DISTRIBUTION_PRECISION = 100;
 
     /// @notice The constructor is only used for the initial master contract. Subsequent clones are initialised via `init`.
@@ -898,7 +920,7 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
     /// @notice Accrues the interest on the borrowed tokens and handles the accumulation of fees.
     function accrue() public {
         AccrueInfo memory _accrueInfo = accrueInfo;
-        // Number of seconds since accrue was called
+        /// @dev Number of seconds since accrue was called
         uint256 elapsedTime = block.timestamp - _accrueInfo.lastAccrued;
         if (elapsedTime == 0) {
             return;
@@ -911,7 +933,7 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
             return;
         }
 
-        // Accrue interest
+        /// @dev Accrue interest
         uint128 extraAmount = (uint256(_totalBorrow.elastic).mul(_accrueInfo.INTEREST_PER_SECOND).mul(elapsedTime) / 1e18).to128();
         _totalBorrow.elastic = _totalBorrow.elastic.add(extraAmount);
 
@@ -925,7 +947,7 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
     /// @notice Concrete implementation of `isSolvent`. Includes a third parameter to allow caching `exchangeRate`.
     /// @param _exchangeRate The exchange rate. Used to cache the `exchangeRate` between calls.
     function _isSolvent(address user, uint256 _exchangeRate) internal view returns (bool) {
-        // accrue must have already been called!
+        /// @dev accrue must have already been called!
         uint256 borrowPart = userBorrowPart[user];
         if (borrowPart == 0) return true;
         uint256 collateralShare = userCollateralShare[user];
@@ -939,7 +961,7 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
                 collateralShare.mul(EXCHANGE_RATE_PRECISION / COLLATERIZATION_RATE_PRECISION).mul(COLLATERIZATION_RATE),
                 false
             ) >=
-            // Moved exchangeRate here instead of dividing the other side to preserve more precision
+            /// @dev Moved exchangeRate here instead of dividing the other side to preserve more precision
             borrowPart.mul(_totalBorrow.elastic).mul(_exchangeRate) / _totalBorrow.base;
     }
 
@@ -1026,7 +1048,7 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
         accrueInfo.feesEarned = accrueInfo.feesEarned.add(uint128(feeAmount));
         userBorrowPart[msg.sender] = userBorrowPart[msg.sender].add(part);
 
-        // As long as there are tokens on this contract you can 'mint'... this enables limiting borrows
+        /// @notice As long as there are tokens on this contract you can 'mint'... this enables limiting borrows
         share = bentoBox.toShare(senUSD, amount, false);
         bentoBox.transfer(senUSD, address(this), to, share);
 
@@ -1070,30 +1092,31 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
         amount = _repay(to, skim, part);
     }
 
-    // Functions that need accrue to be called
-    uint8 internal constant ACTION_REPAY = 2;
-    uint8 internal constant ACTION_REMOVE_COLLATERAL = 4;
-    uint8 internal constant ACTION_BORROW = 5;
-    uint8 internal constant ACTION_GET_REPAY_SHARE = 6;
-    uint8 internal constant ACTION_GET_REPAY_PART = 7;
-    uint8 internal constant ACTION_ACCRUE = 8;
+    /// @dev Represents the identifiers for each function that requires the accrue process to be called, ensuring the latest state and interest are accounted for.
+    uint8 internal constant ACTION_REPAY = 2; ///< Action identifier for the repay function.
+    uint8 internal constant ACTION_REMOVE_COLLATERAL = 4; ///< Action identifier for the remove collateral function.
+    uint8 internal constant ACTION_BORROW = 5; ///< Action identifier for the borrow function.
+    uint8 internal constant ACTION_GET_REPAY_SHARE = 6; ///< Action identifier for retrieving the repay share function.
+    uint8 internal constant ACTION_GET_REPAY_PART = 7; ///< Action identifier for retrieving the repay part function.
+    uint8 internal constant ACTION_ACCRUE = 8; ///< Action identifier for the accrue interest function.
 
-    // Functions that don't need accrue to be called
-    uint8 internal constant ACTION_ADD_COLLATERAL = 10;
-    uint8 internal constant ACTION_UPDATE_EXCHANGE_RATE = 11;
+    /// @dev Identifiers for functions that do not necessitate an accrue call, as they do not impact interest rates or require up-to-date accounting.
+    uint8 internal constant ACTION_ADD_COLLATERAL = 10; ///< Action identifier for the add collateral function.
+    uint8 internal constant ACTION_UPDATE_EXCHANGE_RATE = 11; ///< Action identifier for the update exchange rate function.
 
-    // Function on BentoBox
-    uint8 internal constant ACTION_BENTO_DEPOSIT = 20;
-    uint8 internal constant ACTION_BENTO_WITHDRAW = 21;
-    uint8 internal constant ACTION_BENTO_TRANSFER = 22;
-    uint8 internal constant ACTION_BENTO_TRANSFER_MULTIPLE = 23;
-    uint8 internal constant ACTION_BENTO_SETAPPROVAL = 24;
+    /// @dev Function identifiers for interactions with the BentoBox contract, enabling various BentoBox-specific operations.
+    uint8 internal constant ACTION_BENTO_DEPOSIT = 20; ///< Action identifier for BentoBox deposit function.
+    uint8 internal constant ACTION_BENTO_WITHDRAW = 21; ///< Action identifier for BentoBox withdraw function.
+    uint8 internal constant ACTION_BENTO_TRANSFER = 22; ///< Action identifier for BentoBox transfer function.
+    uint8 internal constant ACTION_BENTO_TRANSFER_MULTIPLE = 23; ///< Action identifier for BentoBox transfer multiple function.
+    uint8 internal constant ACTION_BENTO_SETAPPROVAL = 24; ///< Action identifier for BentoBox set approval function.
 
-    // Any external call (except to BentoBox)
-    uint8 internal constant ACTION_CALL = 30;
+    /// @dev Helper function to perform a contract call and eventually extracting revert messages on failure.
+    uint8 internal constant ACTION_CALL = 30; ///< Action identifier for an external call.
 
-    int256 internal constant USE_VALUE1 = -1;
-    int256 internal constant USE_VALUE2 = -2;
+    /// @dev Special value constants used within the cook function to indicate that the function should use a value from predefined variables.
+    int256 internal constant USE_VALUE1 = -1;   ///< Special constant to indicate the use of value1 in cook function operations.
+    int256 internal constant USE_VALUE2 = -2;   ///< Special constant to indicate the use of value2 in cook function operations.
 
     /// @dev Helper function for choosing the correct value (`value1` or `value2`) depending on `inNum`.
     function _num(
@@ -1136,9 +1159,10 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
         uint256 value1,
         uint256 value2
     ) internal returns (bytes memory, uint8) {
+        /// @dev Decode the data to get call information.
         (address callee, bytes memory callData, bool useValue1, bool useValue2, uint8 returnValues) =
             abi.decode(data, (address, bytes, bool, bool, uint8));
-
+        /// @dev Process the call using the provided information.
         if (useValue1 && !useValue2) {
             callData = abi.encodePacked(callData, value1);
         } else if (!useValue1 && useValue2) {
@@ -1147,8 +1171,10 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
             callData = abi.encodePacked(callData, value1, value2);
         }
 
+        /// @dev Requirements ensure the call is to a valid contract and not to BentoBox or itself.
         require(callee != address(bentoBox) && callee != address(this), "Chamber: can't call");
-
+        
+        /// @dev Execution of the call along with handling for success or failure.
         (bool success, bytes memory returnData) = callee.call{value: value}(callData);
         require(success, "Chamber: call failed");
         return (returnData, returnValues);
@@ -1171,13 +1197,18 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
         uint256[] calldata values,
         bytes[] calldata datas
     ) external payable returns (uint256 value1, uint256 value2) {
+        /// @dev Initialize the struct to track the status of the operation.
         CookStatus memory status;
+
+        /// @dev Loop through each action to perform them in sequence.
         for (uint256 i = 0; i < actions.length; i++) {
             uint8 action = actions[i];
             if (!status.hasAccrued && action < 10) {
+                // Conditionally accrue interest if needed before certain actions.
                 accrue();
                 status.hasAccrued = true;
             }
+            /// @dev Handle specific actions by decoding data and executing related logic.
             if (action == ACTION_ADD_COLLATERAL) {
                 (int256 share, address to, bool skim) = abi.decode(datas[i], (int256, address, bool));
                 addCollateral(to, skim, _num(share, value1, value2));
@@ -1226,7 +1257,7 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
                 value1 = totalBorrow.toBase(_num(amount, value1, value2), false);
             }
         }
-
+        // Perform solvency check at the end if required due to state-changing actions.
         if (status.needsSolvencyCheck) {
             require(_isSolvent(msg.sender, exchangeRate), "Chamber: user insolvent");
         }
@@ -1242,17 +1273,22 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
         address to,
         ISwapper swapper
     ) public {
-        // Oracle can fail but we still need to allow liquidations
+        /// @dev Fetches the current exchange rate and accrues interest, ensuring up-to-date calculations.
         (, uint256 _exchangeRate) = updateExchangeRate();
         accrue();
 
+        /// @dev Initializations for totals that will keep track of the liquidation process.
         uint256 allCollateralShare;
         uint256 allBorrowAmount;
         uint256 allBorrowPart;
         Rebase memory _totalBorrow = totalBorrow;
         Rebase memory bentoBoxTotals = bentoBox.totals(collateral);
+
+        /// @dev Iterates over all users provided.
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
+
+            /// @dev If a user is insolvent based on the current exchange rate, proceed with liquidation.
             if (!_isSolvent(user, _exchangeRate)) {
                 uint256 borrowPart;
                 {
@@ -1260,6 +1296,7 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
                     borrowPart = maxBorrowParts[i] > availableBorrowPart ? availableBorrowPart : maxBorrowParts[i];
                     userBorrowPart[user] = availableBorrowPart.sub(borrowPart);
                 }
+                /// @dev Calculate the liquidation amounts for borrow parts and corresponding collateral shares.
                 uint256 borrowAmount = _totalBorrow.toElastic(borrowPart, false);
                 uint256 collateralShare =
                     bentoBoxTotals.toBase(
@@ -1267,38 +1304,44 @@ contract ChamberFlat is BoringOwnable, IMasterContract {
                             (LIQUIDATION_MULTIPLIER_PRECISION * EXCHANGE_RATE_PRECISION),
                         false
                     );
-
+                /// @dev Adjust user and total borrow parts and shares, emitting events for collateral removal and repayment.
                 userCollateralShare[user] = userCollateralShare[user].sub(collateralShare);
                 emit LogRemoveCollateral(user, to, collateralShare);
                 emit LogRepay(msg.sender, user, borrowAmount, borrowPart);
 
-                // Keep totals
+                /// @dev Aggregate totals for processing after all individual user liquidations are complete.
                 allCollateralShare = allCollateralShare.add(collateralShare);
                 allBorrowAmount = allBorrowAmount.add(borrowAmount);
                 allBorrowPart = allBorrowPart.add(borrowPart);
             }
         }
+        /// @dev Ensure that there was at least one insolvent user and liquidation occurred.
         require(allBorrowAmount != 0, "Chamber: all are solvent");
+
+        /// @dev Update total borrow and total collateral share variables after liquidation.
         _totalBorrow.elastic = _totalBorrow.elastic.sub(allBorrowAmount.to128());
         _totalBorrow.base = _totalBorrow.base.sub(allBorrowPart.to128());
         totalBorrow = _totalBorrow;
         totalCollateralShare = totalCollateralShare.sub(allCollateralShare);
-        
+
+        /// @dev Calculate additional distribution amount as a fee for the liquidation process and update fee earnings.
         {
             uint256 distributionAmount = (allBorrowAmount.mul(LIQUIDATION_MULTIPLIER) / LIQUIDATION_MULTIPLIER_PRECISION).sub(allBorrowAmount).mul(DISTRIBUTION_PART) / DISTRIBUTION_PRECISION; // Distribution Amount
             allBorrowAmount = allBorrowAmount.add(distributionAmount);
             accrueInfo.feesEarned = accrueInfo.feesEarned.add(distributionAmount.to128());
         }
-
+        /// @dev Convert the total borrow amount to borrow shares for transfer.
         uint256 allBorrowShare = bentoBox.toShare(senUSD, allBorrowAmount, true);
 
-        // Swap using a swapper freely chosen by the caller
-        // Open (flash) liquidation: get proceeds first and provide the borrow after
+        /// @dev If a swapper contract is specified, use it to swap the collateral for the debt asset.
+        /// @dev Otherwise, transfer the collateral to the specified receiver.
+        /// @dev Open (flash) liquidation: get proceeds first and provide the borrow after
         bentoBox.transfer(collateral, address(this), to, allCollateralShare);
         if (swapper != ISwapper(0)) {
             swapper.swap(collateral, senUSD, msg.sender, allBorrowShare, allCollateralShare);
         }
 
+        /// @dev Finally, transfer the liquidated borrow shares back to the protocol.
         bentoBox.transfer(senUSD, msg.sender, address(this), allBorrowShare);
     }
 

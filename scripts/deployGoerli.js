@@ -8,12 +8,13 @@ async function main() {
   const ORACLE_KEY = "ETH/USD";
   const ETHUSD_ORACLE = "0xb70CA068486444b569DEB64D9D3807CBEC3Bf520"; //TODO CHANGE, this is DIA Oracle
 
+  // bentobox deployment
   const bento = await hre.ethers.getContractFactory("BentoBoxV1");
   console.log('bentobox deploying...')
   const bentobox = await bento.deploy(WETH);
-  
   await bentobox.deployed();
 
+  // Chamber and senUSD deployment
   const chamber = await hre.ethers.getContractFactory("ChamberFlat");
   const senUsd = await hre.ethers.getContractFactory("SenecaUSD");
   console.log('senUSD deploying...')
@@ -23,6 +24,7 @@ async function main() {
   const Chamber = await chamber.deploy(bentobox.address, senUSD.address);
   await Chamber.deployed();
   await Chamber.setFeeTo(treasury);
+  //whitelist 
   await bentobox.whitelistMasterContract(Chamber.address, true);
 
   console.log(
@@ -47,7 +49,7 @@ async function main() {
   const collateral = WETH; // wETH
   const oracleData = "0x0000000000000000000000000000000000000000";
 
-  // let INTEREST_CONVERSION = 1e18/(365.25*3600*24)/100
+  /// let INTEREST_CONVERSION = 1e18/(365.25*3600*24)/100
   let interest = parseInt(158440439)
   const OPENING_CONVERSION = 1e5/100
   const opening = 0.5 * OPENING_CONVERSION

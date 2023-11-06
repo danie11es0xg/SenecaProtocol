@@ -434,13 +434,13 @@ contract BoringFactory {
         bool useCreate2
     ) public payable returns (address cloneAddress) {
         require(masterContract != address(0), "BoringFactory: No masterContract");
-        bytes20 targetBytes = bytes20(masterContract); // Takes the first 20 bytes of the masterContract's address
+        bytes20 targetBytes = bytes20(masterContract); /// @dev Takes the first 20 bytes of the masterContract's address
 
         if (useCreate2) {
-            // each masterContract has different code already. So clones are distinguished by their data only.
+            /// @dev each masterContract has different code already. So clones are distinguished by their data only.
             bytes32 salt = keccak256(data);
 
-            // Creates clone, more info here: https://blog.openzeppelin.com/deep-dive-into-the-minimal-proxy-contract/
+            /// @dev Creates clone, more info here: https://blog.openzeppelin.com/deep-dive-into-the-minimal-proxy-contract/
             assembly {
                 let clone := mload(0x40)
                 mstore(clone, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
@@ -481,7 +481,7 @@ contract MasterContractManager is BoringOwnable, BoringFactory {
     mapping(address => uint256) public nonces;
 
     bytes32 private constant DOMAIN_SEPARATOR_SIGNATURE_HASH = keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)");
-    // See https://eips.ethereum.org/EIPS/eip-191
+    /// @dev See https://eips.ethereum.org/EIPS/eip-191
     string private constant EIP191_PREFIX_FOR_EIP712_STRUCTURED_DATA = "\x19\x01";
     bytes32 private constant APPROVAL_SIGNATURE_HASH =
         keccak256("SetMasterContractApproval(string warning,address user,address masterContract,bool approved,uint256 nonce)");
@@ -491,6 +491,7 @@ contract MasterContractManager is BoringOwnable, BoringFactory {
     // solhint-disable-next-line var-name-mixedcase
     uint256 private immutable DOMAIN_SEPARATOR_CHAIN_ID;
 
+    /// @dev sets chainID for domain separator
     constructor() public {
         uint256 chainId;
         assembly {
@@ -499,6 +500,7 @@ contract MasterContractManager is BoringOwnable, BoringFactory {
         _DOMAIN_SEPARATOR = _calculateDomainSeparator(DOMAIN_SEPARATOR_CHAIN_ID = chainId);
     }
 
+    /// @dev sets chainID for domain separator
     function _calculateDomainSeparator(uint256 chainId) private view returns (bytes32) {
         return keccak256(abi.encode(DOMAIN_SEPARATOR_SIGNATURE_HASH, keccak256("BentoBox V1"), chainId, address(this)));
     }
@@ -549,23 +551,23 @@ contract MasterContractManager is BoringOwnable, BoringFactory {
         // Checks
         require(masterContract != address(0), "MasterCMgr: masterC not set"); // Important for security
 
-        // If no signature is provided, the fallback is executed
+        /// @dev If no signature is provided, the fallback is executed
         if (r == 0 && s == 0 && v == 0) {
             require(user == msg.sender, "MasterCMgr: user not sender");
             require(masterContractOf[user] == address(0), "MasterCMgr: user is clone");
             require(whitelistedMasterContracts[masterContract], "MasterCMgr: not whitelisted");
         } else {
-            // Important for security - any address without masterContract has address(0) as masterContract
-            // So approving address(0) would approve every address, leading to full loss of funds
-            // Also, ecrecover returns address(0) on failure. So we check this:
+            /// @notice Important for security - any address without masterContract has address(0) as masterContract
+            /// @notice So approving address(0) would approve every address, leading to full loss of funds
+            /// @notice Also, ecrecover returns address(0) on failure. So we check this:
             require(user != address(0), "MasterCMgr: User cannot be 0");
 
-            // C10 - Protect signatures against replay, use nonce and chainId (SWC-121)
-            // C10: nonce + chainId are used to prevent replays
-            // C11 - All signatures strictly EIP-712 (SWC-117 SWC-122)
-            // C11: signature is EIP-712 compliant
-            // C12 - abi.encodePacked can't contain variable length user input (SWC-133)
-            // C12: abi.encodePacked has fixed length parameters
+            /// @notice C10 - Protect signatures against replay, use nonce and chainId (SWC-121)
+            /// @notice C10: nonce + chainId are used to prevent replays
+            /// @notice C11 - All signatures strictly EIP-712 (SWC-117 SWC-122)
+            /// @notice C11: signature is EIP-712 compliant
+            /// @notice C12 - abi.encodePacked can't contain variable length user input (SWC-133)
+            /// @notice C12: abi.encodePacked has fixed length parameters
             bytes32 digest =
                 keccak256(
                     abi.encodePacked(
@@ -617,10 +619,10 @@ contract BaseBoringBatchable {
     /// @param revertOnFail If True then reverts after a failed call and stops doing further calls.
     /// @return successes An array indicating the success of a call, mapped one-to-one to `calls`.
     /// @return results An array with the returned data of each function call, mapped one-to-one to `calls`.
-    // F1: External is ok here because this is the batch function, adding it to a batch makes no sense
-    // F2: Calls in the batch may be payable, delegatecall operates in the same context, so each call in the batch has access to msg.value
-    // C3: The length of the loop is fully under user control, so can't be exploited
-    // C7: Delegatecall is only used on the same contract, so it's safe
+    /// @notice F1: External is ok here because this is the batch function, adding it to a batch makes no sense
+    /// @notice F2: Calls in the batch may be payable, delegatecall operates in the same context, so each call in the batch has access to msg.value
+    /// @notice C3: The length of the loop is fully under user control, so can't be exploited
+    /// @notice C7: Delegatecall is only used on the same contract, so it's safe
     function batch(bytes[] calldata calls, bool revertOnFail) external payable returns (bool[] memory successes, bytes[] memory results) {
         successes = new bool[](calls.length);
         results = new bytes[](calls.length);
@@ -689,6 +691,9 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
     // *** STRUCTS *** //
     // *************** //
 
+    /**
+    * @dev Represents the data for a strategy within the protocol.
+    */
     struct StrategyData {
         uint64 strategyStartDate;
         uint64 targetPercentage;
@@ -699,35 +704,82 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
     // *** CONSTANTS AND IMMUTABLES *** //
     // ******************************** //
 
-    // V2 - Can they be private?
+    /// @notice V2 - Can they be private?
     // V2: Private to save gas, to verify it's correct, check the constructor arguments
+    /**
+     * @dev Wrapped Ether (WETH) token contract.
+     * @dev This is set at contract deployment and is immutable, meaning it cannot be changed later.
+    */
     IERC20 private immutable wethToken;
 
+    /**
+    * @dev Special constant to represent native Ethereum in cases where token address is needed.
+    */
     IERC20 private constant USE_ETHEREUM = IERC20(0);
+
+    /**
+    * @dev Fee charged for flash loans, set to 0.05%.
+    */
     uint256 private constant FLASH_LOAN_FEE = 50; // 0.05%
+
+    /**
+     * @dev Precision used for calculating the flash loan fee.
+     */
     uint256 private constant FLASH_LOAN_FEE_PRECISION = 1e5;
+
+    /**
+     * @dev The delay time before a new strategy is fully engaged.
+     */
     uint256 private constant STRATEGY_DELAY = 2 weeks;
+
+    /**
+     * @dev Maximum target percentage that any strategy can have.
+     */
     uint256 private constant MAX_TARGET_PERCENTAGE = 95; // 95%
+    /**
+     * @dev Minimum share balance to prevent ratio distortions.
+     */
     uint256 private constant MINIMUM_SHARE_BALANCE = 1000; // To prevent the ratio going off
 
     // ***************** //
     // *** VARIABLES *** //
     // ***************** //
 
-    // Balance per token per address/contract in shares
+    /**
+     * @notice Mapping of balances per token per address, represented in shares.
+     * @dev This allows for the tracking of individual balances in a gas-efficient manner.
+     */
     mapping(IERC20 => mapping(address => uint256)) public balanceOf;
 
-    // Rebase from amount to share
+    /**
+     * @notice Stores the rebase structure for each token, converting between amounts and shares.
+     * @dev This is crucial for maintaining the ratio between deposited amounts and the shares owned.
+     */
     mapping(IERC20 => Rebase) public totals;
 
+    /**
+     * @notice Active strategy for each token.
+     */
     mapping(IERC20 => IStrategy) public strategy;
+
+    /**
+    * @notice Pending strategy for each token to be set after the strategy delay.
+    */
     mapping(IERC20 => IStrategy) public pendingStrategy;
+
+    /**
+    * @notice Stores the strategy data for each token.
+    */
     mapping(IERC20 => StrategyData) public strategyData;
 
     // ******************* //
     // *** CONSTRUCTOR *** //
     // ******************* //
 
+    /**
+    * @notice Constructs the BentoBox contract and sets the WETH token address.
+    * @param wethToken_ The address of the Wrapped Ether token contract.
+    */
     constructor(IERC20 wethToken_) public {
         wethToken = wethToken_;
     }
@@ -736,7 +788,7 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
     // *** MODIFIERS *** //
     // ***************** //
 
-    /// Modifier to check if the msg.sender is allowed to use funds belonging to the 'from' address.
+    /// @notice Modifier to check if the msg.sender is allowed to use funds belonging to the 'from' address.
     /// If 'from' is msg.sender, it's allowed.
     /// If 'from' is the BentoBox itself, it's allowed. Any ETH, token balances (above the known balances) or BentoBox balances
     /// can be taken by anyone.
@@ -814,23 +866,23 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
         IERC20 token = token_ == USE_ETHEREUM ? wethToken : token_;
         Rebase memory total = totals[token];
 
-        // If a new token gets added, the tokenSupply call checks that this is a deployed contract. Needed for security.
+        /// @dev If a new token gets added, the tokenSupply call checks that this is a deployed contract. Needed for security.
         require(total.elastic != 0 || token.totalSupply() > 0, "BentoBox: No tokens");
         if (share == 0) {
-            // value of the share may be lower than the amount due to rounding, that's ok
+            /// @dev value of the share may be lower than the amount due to rounding, that's ok
             share = total.toBase(amount, false);
-            // Any deposit should lead to at least the minimum share balance, otherwise it's ignored (no amount taken)
+            /// @dev Any deposit should lead to at least the minimum share balance, otherwise it's ignored (no amount taken)
             if (total.base.add(share.to128()) < MINIMUM_SHARE_BALANCE) {
                 return (0, 0);
             }
         } else {
-            // amount may be lower than the value of share due to rounding, in that case, add 1 to amount (Always round up)
+            /// @dev amount may be lower than the value of share due to rounding, in that case, add 1 to amount (Always round up)
             amount = total.toElastic(share, true);
         }
 
-        // In case of skimming, check that only the skimmable amount is taken.
-        // For ETH, the full balance is available, so no need to check.
-        // During flashloans the _tokenBalanceOf is lower than 'reality', so skimming deposits will mostly fail during a flashloan.
+        /// @dev In case of skimming, check that only the skimmable amount is taken.
+        /// @dev For ETH, the full balance is available, so no need to check.
+        /// @dev During flashloans the _tokenBalanceOf is lower than 'reality', so skimming deposits will mostly fail during a flashloan.
         require(
             from != address(this) || token_ == USE_ETHEREUM || amount <= _tokenBalanceOf(token).sub(total.elastic),
             "BentoBox: Skim too much"
@@ -841,15 +893,15 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
         total.elastic = total.elastic.add(amount.to128());
         totals[token] = total;
 
-        // Interactions
-        // During the first deposit, we check that this token is 'real'
+        /// @notice Interactions
+        /// @dev During the first deposit, we check that this token is 'real'
         if (token_ == USE_ETHEREUM) {
-            // X2 - If there is an error, could it cause a DoS. Like balanceOf causing revert. (SWC-113)
-            // X2: If the WETH implementation is faulty or malicious, it will block adding ETH (but we know the WETH implementation)
+            /// @notice X2 - If there is an error, could it cause a DoS. Like balanceOf causing revert. (SWC-113)
+            /// @notice X2: If the WETH implementation is faulty or malicious, it will block adding ETH (but we know the WETH implementation)
             IWETH(address(wethToken)).deposit{value: amount}();
         } else if (from != address(this)) {
-            // X2 - If there is an error, could it cause a DoS. Like balanceOf causing revert. (SWC-113)
-            // X2: If the token implementation is faulty or malicious, it may block adding tokens. Good.
+            /// @notice X2 - If there is an error, could it cause a DoS. Like balanceOf causing revert. (SWC-113)
+            /// @notice X2: If the token implementation is faulty or malicious, it may block adding tokens. Good.
             token.safeTransferFrom(from, address(this), amount);
         }
         emit LogDeposit(token, from, to, amount, share);
@@ -871,36 +923,36 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
         uint256 share
     ) public allowed(from) returns (uint256 amountOut, uint256 shareOut) {
         // Checks
-        require(to != address(0), "BentoBox: to not set"); // To avoid a bad UI from burning funds
+        require(to != address(0), "BentoBox: to not set"); /// @dev To avoid a bad UI from burning funds
 
         // Effects
         IERC20 token = token_ == USE_ETHEREUM ? wethToken : token_;
         Rebase memory total = totals[token];
         if (share == 0) {
-            // value of the share paid could be lower than the amount paid due to rounding, in that case, add a share (Always round up)
+            /// @dev value of the share paid could be lower than the amount paid due to rounding, in that case, add a share (Always round up)
             share = total.toBase(amount, true);
         } else {
-            // amount may be lower than the value of share due to rounding, that's ok
+            /// @dev amount may be lower than the value of share due to rounding, that's ok
             amount = total.toElastic(share, false);
         }
 
         balanceOf[token][from] = balanceOf[token][from].sub(share);
         total.elastic = total.elastic.sub(amount.to128());
         total.base = total.base.sub(share.to128());
-        // There have to be at least 1000 shares left to prevent reseting the share/amount ratio (unless it's fully emptied)
+        /// @dev There have to be at least 1000 shares left to prevent reseting the share/amount ratio (unless it's fully emptied)
         require(total.base >= MINIMUM_SHARE_BALANCE || total.base == 0, "BentoBox: cannot empty");
         totals[token] = total;
 
         // Interactions
         if (token_ == USE_ETHEREUM) {
-            // X2, X3: A revert or big gas usage in the WETH contract could block withdrawals, but WETH9 is fine.
+            /// @dev X2, X3: A revert or big gas usage in the WETH contract could block withdrawals, but WETH9 is fine.
             IWETH(address(wethToken)).withdraw(amount);
-            // X2, X3: A revert or big gas usage could block, however, the to address is under control of the caller.
+            /// @dev X2, X3: A revert or big gas usage could block, however, the to address is under control of the caller.
             (bool success, ) = to.call{value: amount}("");
             require(success, "BentoBox: ETH transfer failed");
         } else {
-            // X2, X3: A malicious token could block withdrawal of just THAT token.
-            //         masterContracts may want to take care not to rely on withdraw always succeeding.
+            /// @dev X2, X3: A malicious token could block withdrawal of just THAT token.
+            /// @dev masterContracts may want to take care not to rely on withdraw always succeeding.
             token.safeTransfer(to, amount);
         }
         emit LogWithdraw(token, from, to, amount, share);
@@ -923,7 +975,7 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
         uint256 share
     ) public allowed(from) {
         // Checks
-        require(to != address(0), "BentoBox: to not set"); // To avoid a bad UI from burning funds
+        require(to != address(0), "BentoBox: to not set"); /// @notice To avoid a bad UI from burning funds
 
         // Effects
         balanceOf[token][from] = balanceOf[token][from].sub(share);
@@ -1050,8 +1102,8 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
         IStrategy pending = pendingStrategy[token];
         if (data.strategyStartDate == 0 || pending != newStrategy) {
             pendingStrategy[token] = newStrategy;
-            // C1 - All math done through BoringMath (SWC-101)
-            // C1: Our sun will swallow the earth well before this overflows
+            /// @notice C1 - All math done through BoringMath (SWC-101)
+            /// @notice C1: Our sun will swallow the earth well before this overflows
             data.strategyStartDate = (block.timestamp + STRATEGY_DELAY).to64();
             emit LogStrategyQueued(token, newStrategy);
         } else {
@@ -1109,9 +1161,9 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
             totals[token].elastic = totalElastic.to128();
             emit LogStrategyProfit(token, add);
         } else if (balanceChange < 0) {
-            // C1 - All math done through BoringMath (SWC-101)
-            // C1: balanceChange could overflow if it's max negative int128.
-            // But tokens with balances that large are not supported by the BentoBox.
+            /// @notice C1 - All math done through BoringMath (SWC-101)
+            /// @notice C1: balanceChange could overflow if it's max negative int128.
+            /// @notice But tokens with balances that large are not supported by the BentoBox.
             uint256 sub = uint256(-balanceChange);
             totalElastic = totalElastic.sub(sub);
             totals[token].elastic = totalElastic.to128();
@@ -1121,7 +1173,7 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
 
         if (balance) {
             uint256 targetBalance = totalElastic.mul(data.targetPercentage) / 100;
-            // if data.balance == targetBalance there is nothing to update
+            /// @dev if data.balance == targetBalance there is nothing to update
             if (data.balance < targetBalance) {
                 uint256 amountOut = targetBalance.sub(data.balance);
                 if (maxChangeAmount != 0 && amountOut > maxChangeAmount) {
@@ -1147,7 +1199,7 @@ contract BentoBoxV1 is MasterContractManager, BoringBatchable {
         strategyData[token] = data;
     }
 
-    // Contract should be able to receive ETH deposits to support deposit & skim
+    /// @dev Contract should be able to receive ETH deposits to support deposit & skim
     // solhint-disable-next-line no-empty-blocks
     receive() external payable {}
 }

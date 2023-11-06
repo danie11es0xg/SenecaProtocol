@@ -6,19 +6,30 @@
 pragma solidity ^0.8.9;
 
 interface IERC20 {
-    // transfer and tranferFrom have been removed, because they don't work on all tokens (some aren't ERC20 complaint).
-    // By removing them you can't accidentally use them.
-    // name, symbol and decimals have been removed, because they are optional and sometimes wrongly implemented (MKR).
-    // Use BoringERC20 with `using BoringERC20 for IERC20` and call `safeTransfer`, `safeTransferFrom`, etc instead.
+    
+    /**
+     * @dev Interface for the ERC20 standard as defined in the EIP.
+     * @notice transfer and transferFrom have been removed to prevent usage with non-compliant tokens.
+     * @notice Use BoringERC20 with `using BoringERC20 for IERC20` and call `safeTransfer`, `safeTransferFrom`, etc instead.
+     */
+
+    /// @return The total number of tokens in existence.
     function totalSupply() external view returns (uint256);
 
+    /// @return The amount of tokens owned by the `account`.
     function balanceOf(address account) external view returns (uint256);
-
+        
+    /// @return The remaining number of tokens that `spender` will be allowed to spend on behalf of `owner`.
     function allowance(address owner, address spender) external view returns (uint256);
 
+    /// @notice Sets `amount` as the allowance of `spender` over the caller's tokens.
+    /// @return A boolean value indicating whether the operation succeeded.
     function approve(address spender, uint256 amount) external returns (bool);
 
+    /// @dev Emitted when `value` tokens are moved from one account (`from`) to another (`to`).
     event Transfer(address indexed from, address indexed to, uint256 value);
+
+    /// @dev Emitted when the allowance of a `spender` for an `owner` is set by a call to `approve`.
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
     /// @notice EIP 2612
@@ -33,13 +44,29 @@ interface IERC20 {
     ) external;
 }
 
+    /**
+     * @title IStrictERC20
+     * @dev Interface for a strictly compliant ERC20 token.
+     * @notice Use with caution, only if you control the ERC20 token implementation.
+     */
 interface IStrictERC20 {
-    // This is the strict ERC20 interface. Don't use this, certainly not if you don't control the ERC20 token you're calling.
+    /// @return The name of the token.
     function name() external view returns (string memory);
+
+    /// @return The symbol of the token.
     function symbol() external view returns (string memory);
+
+    /// @return The number of decimals the token uses.
     function decimals() external view returns (uint8);
+
+    /// @return The total number of tokens in existence.
     function totalSupply() external view returns (uint256);
+
+    /// @return balance of owner
     function balanceOf(address _owner) external view returns (uint256 balance);
+    
+    /// @notice Moves `_value` tokens from the caller's account to `_to`.
+    /// @return success value indicating whether the operation succeeded.
     function transfer(address _to, uint256 _value) external returns (bool success);
     function transferFrom(address _from, address _to, uint256 _value) external returns (bool success);
     function approve(address _spender, uint256 _value) external returns (bool success);
@@ -218,11 +245,31 @@ interface IBatchFlashBorrower {
     ) external;
 }
 
+/**
+ * @title IBentoBoxV1
+ * @dev Interface for BentoBox V1 which is a token vault that allows for batch transactions and flash loans.
+ */
 interface IBentoBoxV1 {
+    
     function balanceOf(IERC20, address) external view returns (uint256);
 
+    /**
+     * @notice Allows batch calls to BentoBox and interaction with other contracts in one transaction.
+     * @param calls An array of call data to be executed.
+     * @param revertOnFail Decides whether to revert the whole transaction when one of the calls fails.
+     * @return successes An array indicating the success status of each call.
+     * @return results The data returned from each call.
+     */
     function batch(bytes[] calldata calls, bool revertOnFail) external payable returns (bool[] memory successes, bytes[] memory results);
 
+    /**
+     * @notice Performs a flash loan with the ability to execute a batch of flash loans.
+     * @param borrower The contract that receives the flash loan amounts.
+     * @param receivers The addresses receiving the flash loan.
+     * @param tokens The tokens to flash loan.
+     * @param amounts The amounts of each token to loan.
+     * @param data Arbitrary data passed to the borrower.
+     */
     function batchFlashLoan(
         IBatchFlashBorrower borrower,
         address[] calldata receivers,
@@ -231,8 +278,19 @@ interface IBentoBoxV1 {
         bytes calldata data
     ) external;
 
+    /**
+     * @notice Claims ownership of the BentoBox contract.
+     */
     function claimOwnership() external;
 
+    /**
+     * @notice Performs a flash loan. BentoBox's flash loan feature allows for a new type of arbitrage.
+     * @param borrower The contract that receives the flash loan amount.
+     * @param receiver The address receiving the flash loan.
+     * @param token The token to flash loan.
+     * @param amount The amount to loan.
+     * @param data Arbitrary data passed to the borrower.
+     */
     function flashLoan(
         IFlashBorrower borrower,
         address receiver,
@@ -241,12 +299,29 @@ interface IBentoBoxV1 {
         bytes calldata data
     ) external;
 
+    /**
+     * @notice Deploys a new contract using a master contract.
+     * @param masterContract The address of the master contract.
+     * @param data Initialization data for the clone contract.
+     * @param useCreate2 A boolean to decide whether to use create2 for deploying.
+     * @return The address of the new deployed contract.
+     */
     function deploy(
         address masterContract,
         bytes calldata data,
         bool useCreate2
     ) external payable returns (address);
 
+    /**
+     * @notice Allows depositing tokens into BentoBox.
+     * @param token_ The ERC20 token to deposit.
+     * @param from The address to pull the tokens from.
+     * @param to The address that will receive the shares.
+     * @param amount The amount of tokens to deposit.
+     * @param share The amount of shares to receive for the tokens.
+     * @return amountOut The amount of tokens deposited.
+     * @return shareOut The amount of shares minted.
+     */
     function deposit(
         IERC20 token_,
         address from,
@@ -255,24 +330,68 @@ interface IBentoBoxV1 {
         uint256 share
     ) external payable returns (uint256 amountOut, uint256 shareOut);
 
+    /**
+     * @notice Harvests yields from the strategy associated with the token.
+     * @param token The token for which the strategy is being harvested.
+     * @param balance Should be true to harvest to BentoBox balance, false to harvest to strategy balance.
+     * @param maxChangeAmount The maximum amount that the strategy is allowed to increase or decrease the balance by.
+     */
     function harvest(
         IERC20 token,
         bool balance,
         uint256 maxChangeAmount
     ) external;
 
+    /**
+     * @notice Returns if a masterContract has been approved by a user.
+     * @dev user The user to check for approval of a master contract.
+     * @dev masterContract The master contract to check for approval.
+     * @dev returns True if the master contract has been approved, false otherwise.
+     */
     function masterContractApproved(address, address) external view returns (bool);
 
+    /**
+     * @notice Returns the address of the master contract for a specific clone contract.
+     * @dev The clone contract to query for its master contract.
+     * @return The address of the master contract.
+     */
     function masterContractOf(address) external view returns (address);
 
+    /**
+     * @notice Returns the nonce for a given address. Nonces are used for permissioned actions.
+     * @dev The address to query the nonce of.
+     * @return The nonce of the given address.
+     */
     function nonces(address) external view returns (uint256);
 
+    /**
+     * @notice Returns the address of the current owner of the contract.
+     * @return The address of the owner.
+     */
     function owner() external view returns (address);
 
+    /**
+     * @notice Returns the address of the pending owner of the contract.
+     * @return The address of the pending owner.
+     */
     function pendingOwner() external view returns (address);
 
+    /**
+     * @notice Returns the strategy that is pending approval for a given token.
+     * @dev The token to query for a pending strategy.
+     * @return The strategy contract that is pending approval.
+     */
     function pendingStrategy(IERC20) external view returns (IStrategy);
 
+    /**
+     * @notice Allows users to permit the spending of their tokens via signatures.
+     * @param token The token for which spending is being permitted.
+     * @param from The owner of the tokens.
+     * @param to The spender of the tokens.
+     * @param amount The amount of tokens to permit the spender to use.
+     * @param deadline The time until which the permit is valid.
+     * @param v, r, s Components of the signature.
+     */
     function permitToken(
         IERC20 token,
         address from,
@@ -284,8 +403,18 @@ interface IBentoBoxV1 {
         bytes32 s
     ) external;
 
+    /**
+     * @notice Registers the calling contract as a protocol that uses BentoBox.
+     */
     function registerProtocol() external;
 
+    /**
+     * @notice Sets the approval status of a master contract for a user, with a signature.
+     * @param user The user setting the approval status.
+     * @param masterContract The master contract being approved or disapproved.
+     * @param approved Whether the master contract is approved.
+     * @param v, r, s Components of the signature.
+     */
     function setMasterContractApproval(
         address user,
         address masterContract,
@@ -295,12 +424,34 @@ interface IBentoBoxV1 {
         bytes32 s
     ) external;
 
+    /**
+     * @notice Sets a new strategy for a token.
+     * @param token The token to set the strategy for.
+     * @param newStrategy The new strategy contract.
+     */
     function setStrategy(IERC20 token, IStrategy newStrategy) external;
 
+    /**
+     * @notice Sets the target percentage of the strategy for a given token.
+     * @param token The token to set the strategy target percentage for.
+     * @param targetPercentage_ The new target percentage.
+     */
     function setStrategyTargetPercentage(IERC20 token, uint64 targetPercentage_) external;
 
+    /**
+     * @notice Returns the strategy for a given token.
+     * @dev The token to query the strategy of.
+     * @return The strategy contract for the given token.
+     */
     function strategy(IERC20) external view returns (IStrategy);
 
+    /**
+     * @notice Returns strategy data for a given token.
+     * @dev The token to query the strategy data of.
+     * @return strategyStartDate The start date of the strategy.
+     * @return targetPercentage The target percentage of the strategy.
+     * @return balance The balance of the strategy.
+     */
     function strategyData(IERC20)
         external
         view
@@ -310,20 +461,47 @@ interface IBentoBoxV1 {
             uint128 balance
         );
 
+
+    /**
+     * @notice Converts shares to the equivalent amount of a given token.
+     * @param token The token to convert shares to amount.
+     * @param share The number of shares to convert.
+     * @param roundUp If true, rounds up to the nearest whole number.
+     * @return amount equivelant to share.
+     */
     function toAmount(
         IERC20 token,
         uint256 share,
         bool roundUp
     ) external view returns (uint256 amount);
 
+    /**
+     * @notice Converts an amount of a token to the equivalent shares in the BentoBox.
+     * @param token The token to convert the amount to shares.
+     * @param amount The amount of the token to convert.
+     * @param roundUp If true, the conversion will round up, resulting in potentially more shares.
+     * @return share The number of shares equivalent to the given amount of the token.
+     */
     function toShare(
         IERC20 token,
         uint256 amount,
         bool roundUp
     ) external view returns (uint256 share);
 
+    /**
+     * @notice Returns the total supply and share supply for a token in the BentoBox.
+     * @dev The token to query the total supplies of.
+     * @return totals_ The total supplies struct containing the elastic and base supplies.
+     */
     function totals(IERC20) external view returns (Rebase memory totals_);
 
+    /**
+     * @notice Transfers shares of a token from one address to another.
+     * @param token The token of which shares will be transferred.
+     * @param from The address to transfer the shares from.
+     * @param to The address to transfer the shares to.
+     * @param share The number of shares to transfer.
+     */
     function transfer(
         IERC20 token,
         address from,
@@ -331,6 +509,13 @@ interface IBentoBoxV1 {
         uint256 share
     ) external;
 
+    /**
+     * @notice Transfers shares of a token from one address to multiple addresses.
+     * @param token The token of which shares will be transferred.
+     * @param from The address to transfer the shares from.
+     * @param tos An array of addresses to transfer the shares to.
+     * @param shares An array of the number of shares to transfer to each address.
+     */
     function transferMultiple(
         IERC20 token,
         address from,
@@ -338,16 +523,42 @@ interface IBentoBoxV1 {
         uint256[] calldata shares
     ) external;
 
+    /**
+     * @notice Initiates the transfer of the BentoBox ownership to a new address.
+     * @param newOwner The address proposed as the new owner of BentoBox.
+     * @param direct If true, the ownership will transfer immediately.
+     * @param renounce If true, the current owner will renounce ownership, making the BentoBox ownerless.
+     */
     function transferOwnership(
         address newOwner,
         bool direct,
         bool renounce
     ) external;
 
+    /**
+     * @notice Adds or removes a master contract to the whitelist of master contracts.
+     * @param masterContract The master contract to whitelist or remove from the whitelist.
+     * @param approved The approval status for the master contract.
+     */
     function whitelistMasterContract(address masterContract, bool approved) external;
 
+    /**
+     * @notice Checks if a master contract is whitelisted.
+     * @dev The master contract to check the whitelist status of.
+     * @return True if the master contract is whitelisted, false otherwise.
+     */
     function whitelistedMasterContracts(address) external view returns (bool);
 
+    /**
+     * @notice Withdraws a token from the BentoBox.
+     * @param token_ The token to withdraw.
+     * @param from The address to withdraw the tokens from.
+     * @param to The address to send the withdrawn tokens to.
+     * @param amount The amount of the token to withdraw.
+     * @param share The number of shares to burn for the withdrawal.
+     * @return amountOut The amount of tokens withdrawn.
+     * @return shareOut The number of shares burned for the withdrawal.
+     */
     function withdraw(
         IERC20 token_,
         address from,
@@ -401,30 +612,84 @@ interface IOracle {
 }
 
 interface IChamber {
+    /**
+     * @notice Gets the oracle contract associated with this Chamber.
+     * @return IOracle The oracle contract interface.
+     */
     function oracle() external view returns (IOracle);
 
+    /**
+     * @notice Gets the data used by the oracle for determining prices.
+     * @return bytes The oracle data.
+     */
     function oracleData() external view returns (bytes memory);
 
+    /**
+     * @notice Returns the accrue information including lastAccrueTime, feesEarned, and interestPerSecond.
+     * @return uint64 The last time the accrue was called.
+     * @return uint128 The total fees earned.
+     * @return uint64 The interest charged per second.
+     */
     function accrueInfo() external view returns (uint64, uint128, uint64);
 
+    /**
+     * @notice The fee taken when a borrow transaction is opened.
+     * @return uint256 The opening fee for borrows.
+     */
     function BORROW_OPENING_FEE() external view returns (uint256);
 
+    /**
+     * @notice The minimum rate at which collateral must exceed the borrowed amount.
+     * @return uint256 The rate used to determine minimum collateralization.
+     */
     function COLLATERIZATION_RATE() external view returns (uint256);
 
+    /**
+     * @notice The rate at which collateral is sold in a liquidation event.
+     * @return uint256 The multiplier used when liquidating collateral.
+     */
     function LIQUIDATION_MULTIPLIER() external view returns (uint256);
 
+    /**
+     * @notice The total amount of collateral shares within this Chamber.
+     * @return uint256 The total collateral shares.
+     */
     function totalCollateralShare() external view returns (uint256);
 
+    /**
+     * @notice The address of the BentoBox contract that the Chamber interacts with.
+     * @return address The address of the BentoBox contract.
+     */
     function bentoBox() external view returns (address);
 
+    /**
+     * @notice The address where fees collected by this Chamber are sent.
+     * @return address The address that receives the fees.
+     */
     function feeTo() external view returns (address);
 
+    /**
+     * @notice The master contract of this Chamber for the purpose of cloning.
+     * @return IChamber The interface of the master contract.
+     */
     function masterContract() external view returns (IChamber);
 
+    /**
+     * @notice The collateral token that is being used in the Chamber.
+     * @return IERC20 The interface of the collateral token contract.
+     */
     function collateral() external view returns (IERC20);
 
+    /**
+     * @notice Updates the address that receives the fees from the Chamber.
+     * @param newFeeTo The new address that will receive the fees.
+     */
     function setFeeTo(address newFeeTo) external;
 
+    /**
+     * @notice Accrues interest to outstanding borrows and fees to the Chamber.
+     * It must be called periodically to update the interest rates and fees.
+     */
     function accrue() external;
 
     function totalBorrow() external view returns (Rebase memory);
